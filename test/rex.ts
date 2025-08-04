@@ -6,7 +6,7 @@ import {Asset} from '@wharfkit/antelope'
 import {Resources, REXState} from '../src'
 import {makeClient} from '@wharfkit/mock-data'
 
-const resources = new Resources({api: makeClient('https://eos.greymass.com')})
+const resources = new Resources({api: makeClient('https://eos.greymass.com'), sampleAccount: 'b1'})
 
 suite('[eos] rex calculations', function () {
     this.slow(200)

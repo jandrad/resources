@@ -59,7 +59,7 @@ export class PowerUpStateResourceCPU extends PowerUpStateResource {
     price_per_us(usage: SampleUsage, us = 1000, options?: PowerUpStateOptions): number {
         // Determine the utilization increase by this action
         const frac = UInt128.from(this.frac(usage, us))
-        const utilization_increase = this.utilization_increase(usage.cpu, frac)
+        const utilization_increase = this.utilization_increase(frac)
 
         // Determine the adjusted utilization if needed
         const adjusted_utilization = this.determine_adjusted_utilization(options)

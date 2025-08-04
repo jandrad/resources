@@ -60,7 +60,7 @@ export class PowerUpStateResourceNET extends PowerUpStateResource {
     price_per_byte(usage: SampleUsage, bytes = 1000, options?: PowerUpStateOptions): number {
         // Determine the utilization increase by this action
         const frac = UInt128.from(this.frac(usage, bytes))
-        const utilization_increase = this.utilization_increase(usage.net, frac)
+        const utilization_increase = this.utilization_increase(frac)
 
         // Determine the adjusted utilization if needed
         const adjusted_utilization = this.determine_adjusted_utilization(options)

@@ -52,29 +52,37 @@ export abstract class PowerUpStateResource extends Struct {
     }
 
     // Common casting for typed values to numbers
-    cast() {
+    cast(): {
+        adjusted_utilization: BN
+        decay_secs: number
+        exponent: number
+        utilization: BN
+        utilization_timestamp: number
+        weight: BN
+        weight_ratio: BN
+    } {
         return {
-            adjusted_utilization: Number(this.adjusted_utilization),
+            adjusted_utilization: new BN(String(this.adjusted_utilization)),
             decay_secs: Number(this.decay_secs.value),
             exponent: Number(this.exponent),
-            utilization: Number(this.utilization),
+            utilization: new BN(String(this.utilization)),
             utilization_timestamp: Number(this.utilization_timestamp.value),
             weight: new BN(String(this.weight)),
-            weight_ratio: Number(this.weight_ratio),
+            weight_ratio: new BN(String(this.weight_ratio)),
         }
     }
 
     // Mimic: https://github.com/EOSIO/eosio.contracts/blob/d7bc0a5cc8c0c2edd4dc61b0126517d0cb46fd94/contracts/eosio.system/src/powerup.cpp#L358
-    utilization_increase(sample: UInt128, frac) {
+    utilization_increase(frac: UInt128): BN {
         const {weight} = this
         const frac128 = UInt128.from(frac)
         const utilization_increase =
-            new BN(weight.value.mul(new BN(frac128.value))) / Math.pow(10, 15)
-        return Math.ceil(utilization_increase)
+            new BN(weight.value.mul(new BN(frac128.toString()))) / Math.pow(10, 15)
+        return new BN(Math.ceil(utilization_increase))
     }
 
     // Mimic: https://github.com/EOSIO/eosio.contracts/blob/d7bc0a5cc8c0c2edd4dc61b0126517d0cb46fd94/contracts/eosio.system/src/powerup.cpp#L284-L298
-    price_function(utilization: number): number {
+    price_function(utilization: BN): number {
         const {exponent, weight} = this.cast()
         const max_price: number = this.max_price.value
         const min_price: number = this.min_price.value
@@ -83,20 +91,24 @@ export abstract class PowerUpStateResource extends Struct {
         if (new_exponent <= 0.0) {
             return max_price
         } else {
-            const util_weight = new BN(utilization) / weight
+            const util_weight = Number(
+                new bigDecimal(utilization.toString())
+                    .divide(new bigDecimal(weight.toString()))
+                    .getValue()
+            )
             price += (max_price - min_price) * Math.pow(util_weight, new_exponent)
         }
         return price
     }
 
     // Mimic: https://github.com/EOSIO/eosio.contracts/blob/d7bc0a5cc8c0c2edd4dc61b0126517d0cb46fd94/contracts/eosio.system/src/powerup.cpp#L274-L280
-    price_integral_delta(start_utilization: number, end_utilization: number): number {
+    price_integral_delta(start_utilization: BN, end_utilization: BN): number {
         const {exponent, weight} = this.cast()
         const max_price: number = this.max_price.value
         const min_price: number = this.min_price.value
         const coefficient = (max_price - min_price) / exponent
-        const start_u = new BN(start_utilization) / weight
-        const end_u = new BN(end_utilization) / weight
+        const start_u = start_utilization / weight
+        const end_u = end_utilization / weight
         const delta =
             min_price * end_u -
             min_price * start_u +
@@ -106,15 +118,15 @@ export abstract class PowerUpStateResource extends Struct {
     }
 
     // Mimic: https://github.com/EOSIO/eosio.contracts/blob/d7bc0a5cc8c0c2edd4dc61b0126517d0cb46fd94/contracts/eosio.system/src/powerup.cpp#L262-L315
-    fee(utilization_increase, adjusted_utilization) {
+    fee(utilization_increase: BN, adjusted_utilization: BN) {
         const {utilization, weight} = this.cast()
 
-        let start_utilization: number = utilization
-        const end_utilization: number = start_utilization + utilization_increase
+        let start_utilization: BN = utilization
+        const end_utilization: BN = start_utilization.add(utilization_increase)
 
         let fee = 0
-        if (start_utilization < adjusted_utilization) {
-            const min = Math.min(utilization_increase, adjusted_utilization - start_utilization)
+        if (start_utilization.lt(adjusted_utilization)) {
+            const min = BN.min(utilization_increase, adjusted_utilization.sub(start_utilization))
             fee += Number(
                 new bigDecimal(this.price_function(adjusted_utilization) * min)
                     .divide(new bigDecimal(weight.toString()))
@@ -122,7 +134,7 @@ export abstract class PowerUpStateResource extends Struct {
             )
             start_utilization = adjusted_utilization
         }
-        if (start_utilization < end_utilization) {
+        if (start_utilization.lt(end_utilization)) {
             fee += this.price_integral_delta(start_utilization, end_utilization)
         }
         return fee
@@ -134,14 +146,21 @@ export abstract class PowerUpStateResource extends Struct {
         const {decay_secs, utilization, utilization_timestamp} = this.cast()
         let {adjusted_utilization} = this.cast()
         // If utilization is less than adjusted, calculate real time value
-        if (utilization < adjusted_utilization) {
+        if (utilization.lt(adjusted_utilization)) {
             // Create now & adjust JS timestamp to match EOSIO timestamp values
             const ts = options && options.timestamp ? options.timestamp : new Date()
             const now = TimePointSec.from(ts).toMilliseconds() / 1000
-            const diff: number = adjusted_utilization - utilization
-            let delta: number = diff * Math.exp(-(now - utilization_timestamp) / decay_secs)
-            delta = Math.min(Math.max(delta, 0), diff) // Clamp the delta
-            adjusted_utilization = utilization + delta
+            const diff: BN = adjusted_utilization.sub(utilization)
+            const exp = Math.exp(-(now - utilization_timestamp) / decay_secs)
+            let delta: BN
+            if (exp !== Infinity) {
+                delta = diff.mul(new BN(exp))
+                delta = BN.min(BN.max(delta, 0), diff) // Clamp the delta
+            } else {
+                delta = diff
+            }
+
+            adjusted_utilization = utilization.add(delta)
         }
         return adjusted_utilization
     }
